@@ -20,6 +20,7 @@ void add_a(CPU *cpu, Memory *memory); // 0x87
 // Adds to the 8-bit A register, data from the absolute address specified by the 16-bit register HL, and stores the result back into the A register.
 void add_hl(CPU *cpu, Memory *memory); // 0x86
 
+// Adds to the 8-bit A register, the immediate data n, and stores the result back into the A register.
 void add_n(CPU *cpu, Memory *memory); // 0xC6
 
 
@@ -36,6 +37,7 @@ void adc_a(CPU *cpu, Memory *memory); // 0x8F
 // Adds to the 8-bit A register, the carry flag and data from the absolute address specified by the 16-bit register HL, and stores the result back into the A register. 
 void adc_hl(CPU *cpu, Memory *memory); // 0x8E
 
+// Adds to the 8-bit A register, the carry flag and the immediate data n, and stores the result back into the A register.
 void adc_n(CPU *cpu, Memory *memory); // 0xCE
 
 
@@ -56,6 +58,7 @@ void sub_a(CPU *cpu, Memory *memory); // 0x97
 // Subtracts from the 8-bit A register, the 8-bit data from the absolute address specified by the 16-bit register HL, and stores the result back into the A register.
 void sub_hl(CPU *cpu, Memory *memory); // 0x96
 
+// Subtracts from the 8-bit A register, the immediate data n, and stores the result back into the A register.
 void sub_n(CPU *cpu, Memory *memory); // 0xD6
 
 
@@ -71,6 +74,7 @@ void sbc_a(CPU *cpu, Memory *memory); // 0x9F
 // Subtracts from the 8-bit A register, the carry flag and data from the absolute address specified by the 16-bit register HL, and stores the result back into the A register.
 void sbc_hl(CPU *cpu, Memory *memory); // 0x9E
 
+// Subtracts from the 8-bit A register, the carry flag and the immediate data n, and stores the result back into the A register.
 void sbc_n(CPU *cpu, Memory *memory); // 0xDE
 
 
@@ -87,8 +91,10 @@ void and_h(CPU *cpu, Memory *memory); // 0xA4
 void and_l(CPU *cpu, Memory *memory); // 0xA5
 void and_a(CPU *cpu, Memory *memory); // 0xA7
 
+// Performs a bitwise AND operation between the 8-bit A register and data from the absolute address specified by the 16-bit register HL, and stores the result back into the A register.
 void and_hl(CPU *cpu, Memory *memory); // 0xA6
 
+//Performs a bitwise AND operation between the 8-bit A register and immediate data n, and stores the result back into the A register.
 void and_n(CPU *cpu, Memory *memory); // 0xE6
 
 
@@ -102,8 +108,10 @@ void xor_h(CPU *cpu, Memory *memory); // 0xAC
 void xor_l(CPU *cpu, Memory *memory); // 0xAD
 void xor_a(CPU *cpu, Memory *memory); // 0xAF
 
+// Performs a bitwise XOR operation between the 8-bit A register and data from the absolute address specified by the 16-bit register HL, and stores the result back into the A register.
 void xor_hl(CPU *cpu, Memory *memory); // 0xAE
 
+// Performs a bitwise XOR operation between the 8-bit A register and immediate data n, and stores the result back into the A register.
 void xor_n(CPU *cpu, Memory *memory); // 0xEE
 
 
@@ -117,8 +125,10 @@ void or_h(CPU *cpu, Memory *memory); // 0xB4
 void or_l(CPU *cpu, Memory *memory); // 0xB5
 void or_a(CPU *cpu, Memory *memory); // 0xB7
 
+// Performs a bitwise OR operation between the 8-bit A register and data from the absolute address specified by the 16-bit register HL, and stores the result back into the A register.
 void or_hl(CPU *cpu, Memory *memory); // 0xB6
 
+// Performs a bitwise OR operation between the 8-bit A register and immediate data n, and stores the result back into the A register.
 void or_n(CPU *cpu, Memory *memory); // 0xF6
 
 
@@ -132,8 +142,10 @@ void cp_h(CPU *cpu, Memory *memory); // 0xBC
 void cp_l(CPU *cpu, Memory *memory); // 0xBD
 void cp_a(CPU *cpu, Memory *memory); // 0xBF
 
+// Subtracts from the 8-bit A register, data from the absolute address specified by the 16-bit register HL, and updates flags based on the result. This instruction is basically identical to SUB (HL), but does not update the A register
 void cp_hl(CPU *cpu, Memory *memory); // 0xBE
 
+// Subtracts from the 8-bit A register, the immediate data n, and updates flags based on the result. This instruction is basically identical to SUB n, but does not update the A register.
 void cp_n(CPU *cpu, Memory *memory); // 0xFE
 
 
