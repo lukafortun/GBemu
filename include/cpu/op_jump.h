@@ -30,4 +30,49 @@ void jp_hl(CPU *cpu, Memory *memory); // 0xE9
 // Unconditional jump to the relative address specified by the signed 8-bit operand e.
 void jr_e(CPU *cpu, Memory *memory); // 0x18 
 
+
+/*
+---------Function call instructions---------
+*/
+
+// Conditional function call to the absolute address specified by the 16-bit operand nn, depending on the condition cc.
+void call_nz_nn(CPU *cpu, Memory *memory);
+void call_nc_nn(CPU *cpu, Memory *memory);
+void call_z_nn(CPU *cpu, Memory *memory);
+void call_c_nn(CPU *cpu, Memory *memory);
+
+
+// Unconditional function call to the absolute address specified by the 16-bit operand nn.
+void call_nn(CPU *cpu, Memory *memory);
+
+
+/*
+---------Function return instructions---------
+*/
+
+// Conditional return from a function, depending on the condition cc.
+void ret_nz(CPU *cpu, Memory *memory);
+void ret_nc(CPU *cpu, Memory *memory);
+void ret_z(CPU *cpu, Memory *memory);
+void ret_z(CPU *cpu, Memory *memory);
+
+// Unconditional return from a function.
+void ret(CPU *cpu, Memory *memory);
+
+
+// Unconditional return from a function. Also enables interrupts by setting IME=1.
+void reti(CPU *cpu, Memory *memory);
+
+
+// Unconditional function call to the absolute fixed address defined by the opcode.
+void rst_0x00(CPU *cpu, Memory *memory);
+void rst_0x10(CPU *cpu, Memory *memory);
+void rst_0x20(CPU *cpu, Memory *memory);
+void rst_0x30(CPU *cpu, Memory *memory);
+void rst_0x08(CPU *cpu, Memory *memory);
+void rst_0x18(CPU *cpu, Memory *memory);
+void rst_0x28(CPU *cpu, Memory *memory);
+void rst_0x38(CPU *cpu, Memory *memory);
+
+
 #endif
