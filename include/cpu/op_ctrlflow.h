@@ -1,5 +1,5 @@
-#ifndef OP_LOAD_H 
-#define OP_LOAD_H
+#ifndef OP_CTRLFLOW_H
+#define OP_CTRLFLOW_H
 
 #include "./cpu.h"
 #include "../memory.h"
@@ -9,20 +9,23 @@
 ---------Jump instructions---------
 */
 
-// Conditional jump to the relative address specified by the signed 8-bit operand e, depending on the condition cc.
-void jr_nc_e(CPU * cpu, Memory *memory); // 0x30
-void jr_nz_e(CPU * cpu, Memory *memory); // 0x20
-void jr_c_e(CPU * cpu, Memory *memory); // 0x38
-void jr_z_e(CPU * cpu, Memory *memory); // 0x28
+// Conditional jump to the relative address specified by the signed 8-bit
+// operand e, depending on the condition cc. Returns whether it branched
+// (the two cases cost a different number of cycles).
+bool jr_nc_e(CPU * cpu, Memory *memory); // 0x30
+bool jr_nz_e(CPU * cpu, Memory *memory); // 0x20
+bool jr_c_e(CPU * cpu, Memory *memory); // 0x38
+bool jr_z_e(CPU * cpu, Memory *memory); // 0x28
 
-// Conditional jump to the absolute address specified by the 16-bit operand nn, depending on the condition cc.
-void jp_nc_nn(CPU * cpu, Memory *memory); // 0xD2
-void jp_nz_nn(CPU * cpu, Memory *memory); // 0xC2
-void jp_c_nn(CPU *cpu, Memory *memory); // 0xDA
-void jp_z_nn(CPU *cpu, Memory *memory); // 0xCA
+// Conditional jump to the absolute address specified by the 16-bit operand
+// nn, depending on the condition cc. Returns whether it branched.
+bool jp_nc_nn(CPU * cpu, Memory *memory); // 0xD2
+bool jp_nz_nn(CPU * cpu, Memory *memory); // 0xC2
+bool jp_c_nn(CPU *cpu, Memory *memory); // 0xDA
+bool jp_z_nn(CPU *cpu, Memory *memory); // 0xCA
 
 // Unconditional jump to the absolute address specified by the 16-bit immediate operand nn.
-void jp_nn(CPU *cpu, Memory *memory); // 0xC4
+void jp_nn(CPU *cpu, Memory *memory); // 0xC3
 
 // Unconditional jump to the absolute address specified by the 16-bit register HL.
 void jp_hl(CPU *cpu, Memory *memory); // 0xE9
@@ -35,15 +38,16 @@ void jr_e(CPU *cpu, Memory *memory); // 0x18
 ---------Function call instructions---------
 */
 
-// Conditional function call to the absolute address specified by the 16-bit operand nn, depending on the condition cc.
-void call_nz_nn(CPU *cpu, Memory *memory); // 0xC4
-void call_nc_nn(CPU *cpu, Memory *memory); // 0xD4
-void call_z_nn(CPU *cpu, Memory *memory); // 0xCC
-void call_c_nn(CPU *cpu, Memory *memory); // 0xDC
+// Conditional function call to the absolute address specified by the 16-bit
+// operand nn, depending on the condition cc. Returns whether it branched.
+bool call_nz_nn(CPU *cpu, Memory *memory); // 0xC4
+bool call_nc_nn(CPU *cpu, Memory *memory); // 0xD4
+bool call_z_nn(CPU *cpu, Memory *memory); // 0xCC
+bool call_c_nn(CPU *cpu, Memory *memory); // 0xDC
 
 
 // Unconditional function call to the absolute address specified by the 16-bit operand nn.
-void call_nn(CPU *cpu, Memory *memory); // 0xDD
+void call_nn(CPU *cpu, Memory *memory); // 0xCD
 
 
 /*
@@ -51,10 +55,11 @@ void call_nn(CPU *cpu, Memory *memory); // 0xDD
 */
 
 // Conditional return from a function, depending on the condition cc.
-void ret_nz(CPU *cpu, Memory *memory); // 0xC0
-void ret_nc(CPU *cpu, Memory *memory); // 0xD0
-void ret_z(CPU *cpu, Memory *memory); // 0xC8
-void ret_z(CPU *cpu, Memory *memory); // 0xD8
+// Returns whether it branched.
+bool ret_nz(CPU *cpu, Memory *memory); // 0xC0
+bool ret_nc(CPU *cpu, Memory *memory); // 0xD0
+bool ret_z(CPU *cpu, Memory *memory); // 0xC8
+bool ret_c(CPU *cpu, Memory *memory); // 0xD8
 
 // Unconditional return from a function.
 void ret(CPU *cpu, Memory *memory); // 0xC9

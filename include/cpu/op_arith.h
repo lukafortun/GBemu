@@ -174,11 +174,36 @@ void dec_a(CPU *cpu, Memory *memory); // 0x3D
 // Decrements the data at the memory address specified by the 16-bit HL register pair.
 void dec_hl(CPU *cpu, Memory *memory); // 0x35
 
+/*
+---------16-bit arithmetic instructions---------
+*/
+
+// Adds to the 16-bit HL register, the 16-bit register rr, and stores the result back into HL.
+void add_hl_bc(CPU *cpu, Memory *memory); // 0x09
+void add_hl_de(CPU *cpu, Memory *memory); // 0x19
+void add_hl_hl(CPU *cpu, Memory *memory); // 0x29
+void add_hl_sp(CPU *cpu, Memory *memory); // 0x39
+
+// Adds to the 16-bit SP register the signed 8-bit operand e.
+void add_sp_e(CPU *cpu, Memory *memory); // 0xE8
+
+// Increments the 16-bit register rr by 1.
+void inc_bc(CPU *cpu, Memory *memory); // 0x03
+void inc_de(CPU *cpu, Memory *memory); // 0x13
+void inc_hl16(CPU *cpu, Memory *memory); // 0x23
+void inc_sp(CPU *cpu, Memory *memory); // 0x33
+
+// Decrements the 16-bit register rr by 1.
+void dec_bc(CPU *cpu, Memory *memory); // 0x0B
+void dec_de(CPU *cpu, Memory *memory); // 0x1B
+void dec_hl16(CPU *cpu, Memory *memory); // 0x2B
+void dec_sp(CPU *cpu, Memory *memory); // 0x3B
+
 // Decimal adjust accumulator
-void daa(CPU *cpu, Memory *memory); // 0x28
+void daa(CPU *cpu, Memory *memory); // 0x27
 
 // Sets the carry flag, and clears the N and H flags.
-void scf(CPU *cpu, Memory *memory); // 0x38
+void scf(CPU *cpu, Memory *memory); // 0x37
 
 // Flips all the bits in the 8-bit A register, and sets the N and H flags.
 void cpl(CPU *cpu, Memory *memory); // 0x2f

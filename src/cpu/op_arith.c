@@ -5,13 +5,18 @@
 ---------Add instructions---------
 */
 
-// Adds to the 8-bit A register, the 8-bit register r, and stores the result back into the A register.
+// Shared core for every 8-bit ADD (register, (HL), and immediate all
+// eventually call this). H and C are computed *before* the add actually
+// happens, by checking the low nibble and full byte in a wider (u16) type
+// so the "did this overflow" comparison can't itself overflow.
 void add_r8(CPU *cpu, u8 r){
-    cpu->f &= ~(N_FLAG | H_FLAG | C_FLAG); // Clear N, H, C flags
-    if((cpu->a & 0x0F) + (r & 0x0F) > 0x0F) cpu->f |= H_FLAG; // Set H flag if there is a carry from bit 3
-    if(cpu->a + r > 0xFF) cpu->f |= C_FLAG; // Set C flag if there is a carry from bit 7
+    u8 h = ((cpu->a & 0x0F) + (r & 0x0F)) > 0x0F; // Carry from bit 3
+    u8 c = ((u16)cpu->a + (u16)r) > 0xFF; // Carry from bit 7
     cpu->a += r;
-    if(cpu->a == 0) cpu->f |= Z_FLAG; // Set Z flag if result is zero
+    cpu->f = 0; // ADD always recomputes every flag from scratch, unlike INC/DEC
+    if(h) cpu->f |= H_FLAG;
+    if(c) cpu->f |= C_FLAG;
+    if(cpu->a == 0) cpu->f |= Z_FLAG;
 }
 
 void add_b(CPU *cpu, Memory *memory){ add_r8(cpu, cpu->b); }; // 0x80
@@ -30,13 +35,20 @@ void add_n(CPU *cpu, Memory *memory) { add_r8(cpu, memory_read(memory, cpu->pc++
 
 
 
-// Adds to the 8-bit A register, the carry flag and the 8-bit register r, and stores the result back into the A register.
+// Same as add_r8, but also adds in the previous carry. The one detail that
+// actually matters here: `carry_in` must be normalized to 0 or 1 before
+// use. C_FLAG is bit 4 (value 0x10) of F, so `cpu->f & C_FLAG` alone is
+// either 0 or 0x10 - adding *that* directly would add 16 instead of 1
+// whenever the carry was set, which was a real bug this project had.
 void adc_r(CPU *cpu, u8 r){
-    cpu->f &= ~(N_FLAG | H_FLAG | C_FLAG); // Clear N, H, C flags
-    if((cpu->a & 0x0F) + (r & 0x0F) + (cpu->f & C_FLAG) > 0x0F) cpu->f |= H_FLAG; // Set H flag if there is a carry from bit 3
-    if(cpu->a + r + (cpu->f & C_FLAG) > 0xFF) cpu->f |= C_FLAG; // Set C flag if there is a carry from bit 7
-    cpu->a += r + (cpu->f & C_FLAG);
-    if(cpu->a == 0) cpu->f |= Z_FLAG; // Set Z flag if result is zero
+    u8 carry_in = (cpu->f & C_FLAG) ? 1 : 0;
+    u8 h = ((cpu->a & 0x0F) + (r & 0x0F) + carry_in) > 0x0F; // Carry from bit 3
+    u8 c = ((u16)cpu->a + (u16)r + carry_in) > 0xFF; // Carry from bit 7
+    cpu->a = cpu->a + r + carry_in;
+    cpu->f = 0;
+    if(h) cpu->f |= H_FLAG;
+    if(c) cpu->f |= C_FLAG;
+    if(cpu->a == 0) cpu->f |= Z_FLAG;
 }
 
 void adc_b(CPU *cpu, Memory *memory) { adc_r(cpu, cpu->b); } // 0x88
@@ -57,7 +69,9 @@ void adc_n(CPU *cpu, Memory *memory) { adc_r(cpu, memory_read(memory, cpu->pc++)
 ---------Subtract instructions---------
 */
 
-// Subtracts from the 8-bit A register, the 8-bit register r, and stores the result back into the A register.
+// Shared core for every 8-bit SUB. `cpu->f = N_FLAG` resets every other
+// flag to 0 up front, so - unlike add_r8's separate booleans-then-OR
+// approach - H/C only ever get set, never need an explicit "else clear".
 void sub_r(CPU *cpu, u8 r) {
     cpu->f = N_FLAG; // Set N flag
     if((cpu->a & 0x0F) < (r & 0x0F)) cpu->f |= H_FLAG; // Set H flag if there is a borrow from bit 4
@@ -81,13 +95,17 @@ void sub_hl(CPU *cpu, Memory *memory) { sub_r(cpu, memory_read(memory, cpu->hl))
 void sub_n(CPU *cpu, Memory *memory) { sub_r(cpu, memory_read(memory, cpu->pc++)); }; // 0xD6
 
 
-// Subtracts from the 8-bit A register, the carry flag and the 8-bit register r, and stores the result back into the A register.
+// Same as sub_r, but also subtracts the previous carry - normalized to 0/1
+// for the same reason described in adc_r above.
 void sbc_r(CPU *cpu, u8 r) {
-    cpu->f = N_FLAG; // Set N flag
-    if((cpu->a & 0x0F) < (r & 0x0F) + (cpu->f & C_FLAG)) cpu->f |= H_FLAG; // Set H flag if there is a borrow from bit 4
-    if(cpu->a < r + (cpu->f & C_FLAG)) cpu->f |= C_FLAG; // Set C flag if there is a borrow from bit 8
-    cpu->a -= r + (cpu->f & C_FLAG);
-    if(cpu->a == 0) cpu->f |= Z_FLAG; // Set Z flag if result is zero
+    u8 carry_in = (cpu->f & C_FLAG) ? 1 : 0;
+    u8 h = (cpu->a & 0x0F) < ((r & 0x0F) + carry_in); // Borrow from bit 4
+    u8 c = (u16)cpu->a < ((u16)r + carry_in); // Borrow from bit 8
+    cpu->a = cpu->a - r - carry_in;
+    cpu->f = N_FLAG;
+    if(h) cpu->f |= H_FLAG;
+    if(c) cpu->f |= C_FLAG;
+    if(cpu->a == 0) cpu->f |= Z_FLAG;
 }
 
 void sbc_b(CPU *cpu, Memory *memory){ sbc_r(cpu, cpu->b); }; // 0x98
@@ -203,12 +221,18 @@ void cp_n(CPU *cpu, Memory *memory){ cp_r(cpu, memory_read(memory, cpu->pc++));}
 
 
 
-// Increments the 8-bit register r by 1.
+// Increments the 8-bit register r by 1. Unlike ADD, INC doesn't touch C -
+// so this can't just reset cpu->f to 0 first like add_r8 does; H and Z
+// must each be explicitly set *and* cleared (both branches of both `if`s
+// below), otherwise a flag left set by some earlier instruction would
+// incorrectly "leak" into this one's result whenever the new condition is
+// false. (An earlier version of this code only ever set these flags, never
+// cleared them, which was a real bug.)
 void inc_r(CPU *cpu, u8 *r){
     cpu->f &= ~N_FLAG; // Clear N flag
-    if((*r & 0x0F) == 0x0F) cpu->f |= H_FLAG; // Set H flag if there is a carry from bit 3
+    if((*r & 0x0F) == 0x0F) cpu->f |= H_FLAG; else cpu->f &= ~H_FLAG; // H flag if carry from bit 3
     (*r)++;
-    if(*r == 0) cpu->f |= Z_FLAG; // Set Z flag if result is zero
+    if(*r == 0) cpu->f |= Z_FLAG; else cpu->f &= ~Z_FLAG; // Z flag if result is zero
 }
 
 void inc_b(CPU *cpu, Memory *memory){inc_r(cpu, &cpu->b);}; // 0x04
@@ -220,14 +244,14 @@ void inc_l(CPU *cpu, Memory *memory){inc_r(cpu, &cpu->l);}; // 0x2C
 void inc_a(CPU *cpu, Memory *memory){inc_r(cpu, &cpu->a);}; // 0x3C
 
 // Increments the data at the memory address specified by the 16-bit HL register pair.
-void inc_hl(CPU *cpu, Memory *memory){ 
+void inc_hl(CPU *cpu, Memory *memory){
   cpu->f &= ~N_FLAG; // Clear N flag
   u8 data = memory_read(memory, cpu->hl);
-  if((data & 0x0F) == 0x0F) cpu->f |= H_FLAG; // Set H flag if there is a carry from bit 3
+  if((data & 0x0F) == 0x0F) cpu->f |= H_FLAG; else cpu->f &= ~H_FLAG; // H flag if carry from bit 3
   data += 1;
   memory_write(memory, cpu->hl, data);
-  if(data == 0) cpu->f |= Z_FLAG; // Set Z flag if result is zero
-}; // 0x33
+  if(data == 0) cpu->f |= Z_FLAG; else cpu->f &= ~Z_FLAG; // Z flag if result is zero
+}; // 0x34
 
 // Decrements the 8-bit register r by 1.
 void dec_r(CPU *cpu, u8 *r){
@@ -257,17 +281,102 @@ void dec_hl(CPU *cpu, Memory *memory){
   if(data == 0) cpu->f |= Z_FLAG; // Set Z flag if result is zero
 }; // 0x35
 
-// Decimal adjust accumulator
-void daa(CPU *cpu, Memory *memory){
+/*
+---------16-bit arithmetic instructions---------
+*/
 
-}; // 0x28
+// ADD HL,rr: unlike the 8-bit ADD above, this leaves Z untouched entirely
+// (per the real instruction set - only N, H, C are affected), and the
+// half-carry checks bit 11 -> 12 (the boundary between the two *bytes* of
+// a 16-bit value), not bit 3 -> 4 like the 8-bit versions.
+void add_hl_rr(CPU *cpu, u16 rr){
+  cpu->f &= ~N_FLAG;
+  if(((cpu->hl & 0x0FFF) + (rr & 0x0FFF)) > 0x0FFF) cpu->f |= H_FLAG; else cpu->f &= ~H_FLAG;
+  if(((u32)cpu->hl + (u32)rr) > 0xFFFF) cpu->f |= C_FLAG; else cpu->f &= ~C_FLAG;
+  cpu->hl += rr;
+}
+
+void add_hl_bc(CPU *cpu, Memory *memory){ add_hl_rr(cpu, cpu->bc); }; // 0x09
+void add_hl_de(CPU *cpu, Memory *memory){ add_hl_rr(cpu, cpu->de); }; // 0x19
+void add_hl_hl(CPU *cpu, Memory *memory){ add_hl_rr(cpu, cpu->hl); }; // 0x29
+void add_hl_sp(CPU *cpu, Memory *memory){ add_hl_rr(cpu, cpu->sp); }; // 0x39
+
+// Adds to the 16-bit SP register the signed 8-bit operand e.
+//
+// The offset is genuinely signed for the actual addition (a negative e
+// must be able to move SP downward), but H/C are - by the real hardware's
+// own defined behavior - computed treating e as *unsigned*, i.e. as if
+// this were an 8-bit add of SP's low byte and the raw operand byte. This
+// looks inconsistent but matches real SM83 flag behavior for both this
+// instruction and LD HL,SP+e below, so it's intentional, not a shortcut.
+void add_sp_e(CPU *cpu, Memory *memory){
+  int8_t e = (int8_t)memory_read(memory, cpu->pc); cpu->pc++;
+  u8 h = ((cpu->sp & 0xF) + (e & 0xF)) > 0xF;
+  u8 c = ((cpu->sp & 0xFF) + (e & 0xFF)) > 0xFF;
+  cpu->sp = (u16)(cpu->sp + e);
+
+  cpu->f = 0; // Z and N are always cleared for this instruction
+  cpu->f |= (h << 5);
+  cpu->f |= (c << 4);
+}; // 0xE8
+
+void inc_bc(CPU *cpu, Memory *memory){ cpu->bc++; }; // 0x03
+void inc_de(CPU *cpu, Memory *memory){ cpu->de++; }; // 0x13
+void inc_hl16(CPU *cpu, Memory *memory){ cpu->hl++; }; // 0x23
+void inc_sp(CPU *cpu, Memory *memory){ cpu->sp++; }; // 0x33
+
+void dec_bc(CPU *cpu, Memory *memory){ cpu->bc--; }; // 0x0B
+void dec_de(CPU *cpu, Memory *memory){ cpu->de--; }; // 0x1B
+void dec_hl16(CPU *cpu, Memory *memory){ cpu->hl--; }; // 0x2B
+void dec_sp(CPU *cpu, Memory *memory){ cpu->sp--; }; // 0x3B
+
+// Decimal Adjust Accumulator - probably the single most confusing opcode
+// on this CPU, so worth spelling out. Old software often stored numbers
+// in BCD (binary-coded decimal): each nibble of a byte holds one decimal
+// digit 0-9, so 0x47 means the decimal number "47", not 71. The CPU's
+// ADD/SUB instructions don't know anything about BCD - they just do
+// normal binary arithmetic - so after adding or subtracting two BCD
+// bytes, the raw binary result can land on a value that isn't a valid
+// BCD number (e.g. 0x09 + 0x01 = 0x0A in binary, but the correct BCD
+// answer is 0x10). DAA is meant to run immediately after that ADD/SUB and
+// nudge the result back into valid BCD by adding or subtracting 0x06
+// and/or 0x60 wherever a nibble spilled over 9 (or a half/full carry
+// already flagged that it did).
+//
+// It has to know whether the *previous* instruction was an add or a
+// subtract (N_FLAG, set by SUB/DEC and cleared by ADD/INC) because the
+// correction goes the opposite direction each way.
+void daa(CPU *cpu, Memory *memory){
+  u8 a = cpu->a;
+  u8 adjust = 0;
+  bool carry = (cpu->f & C_FLAG) != 0;
+
+  if (cpu->f & N_FLAG) {
+    // Previous op was a subtraction: undo an over-correction downward.
+    if (cpu->f & H_FLAG) adjust |= 0x06;
+    if (carry) adjust |= 0x60;
+    a -= adjust;
+  } else {
+    // Previous op was an addition: a nibble > 9 (or a flagged carry into
+    // it) means that digit needs +6 to skip the 6 non-decimal values
+    // (0xA-0xF) it could otherwise land on.
+    if ((cpu->f & H_FLAG) || (a & 0x0F) > 0x09) adjust |= 0x06;
+    if (carry || a > 0x99) { adjust |= 0x60; carry = true; }
+    a += adjust;
+  }
+
+  cpu->f &= ~(H_FLAG | Z_FLAG | C_FLAG); // H is always cleared; N is left as-is
+  if (carry) cpu->f |= C_FLAG;
+  if (a == 0) cpu->f |= Z_FLAG;
+  cpu->a = a;
+}; // 0x27
 
 // Sets the carry flag, and clears the N and H flags.
 void scf(CPU *cpu, Memory *memory){
   cpu->f |= C_FLAG;
   cpu->f &= ~N_FLAG;
   cpu->f &= ~H_FLAG;
-}; // 0x38
+}; // 0x37
 
 // Flips all the bits in the 8-bit A register, and sets the N and H flags.
 void cpl(CPU *cpu, Memory *memory){

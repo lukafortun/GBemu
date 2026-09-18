@@ -4,12 +4,21 @@
 ---------16-bit load instructions---------
 */
 
-// Load to 16-bit register (rr) the immediate 16-bit data (nn) 
+// Load to 16-bit register (rr) the immediate 16-bit data (nn).
+//
+// The Game Boy is little-endian: a 16-bit immediate is stored in the ROM
+// as its low byte first, high byte second. So the *first* byte fetched
+// here (nn_lsb) is the low half, and it must end up in the low half of
+// the reassembled value - `(msb << 8) | lsb`, not the other way around.
+// Getting this backwards was a real, very disruptive bug: it doesn't
+// crash immediately, it just makes every 16-bit immediate (addresses
+// included) come out byte-swapped, so execution eventually jumps
+// somewhere nonsensical.
 void ld_rr_n16(u16 *rr, CPU *cpu, Memory *memory){
   u8 nn_lsb = memory_read(memory, cpu->pc); cpu->pc++;
   u8 nn_msb = memory_read(memory, cpu->pc); cpu->pc++;
-  u16 nn = ((u16)nn_lsb << 8) | nn_msb;
-  *rr = nn; 
+  u16 nn = ((u16)nn_msb << 8) | nn_lsb;
+  *rr = nn;
 
 }
 
@@ -28,21 +37,26 @@ void ld_sp_n16(CPU *cpu, Memory *memory){
 }; //0x31
 
 
-// Load to the adress specified in 16-bit immediate data (nn) to the 16-bit SP register
+// Load to the adress specified in 16-bit immediate data (nn) to the 16-bit SP register.
+// nn is reassembled little-endian, same as ld_rr_n16; SP itself is then
+// written out little-endian too (low byte at nn, high byte at nn+1).
 void ld_nn_sp(CPU *cpu, Memory *memory){
   u8 nn_lsb = memory_read(memory, cpu->pc); cpu->pc++;
   u8 nn_msb = memory_read(memory, cpu->pc); cpu->pc++;
-  u16 nn = ((u16)nn_lsb << 8) | nn_msb;
-  memory_write(memory,nn,(cpu->sp >> 8) & 0xFF); nn++;
-  memory_write(memory,nn,cpu->sp & 0xFF);
+  u16 nn = ((u16)nn_msb << 8) | nn_lsb;
+  memory_write(memory,nn,cpu->sp & 0xFF); nn++;
+  memory_write(memory,nn,(cpu->sp >> 8) & 0xFF);
 }; // 0x08
 
 
-// Pops to the 16-bit register rr data from the stack memory
+// Pops to the 16-bit register rr data from the stack memory.
+// The stack grows downward and stores each 16-bit value low-byte-first at
+// the lower address (see push, below) - so popping reads the low byte
+// first, at the current (lowest) SP, then the high byte one above it.
 void pop(u16 *rr, CPU *cpu, Memory *memory){
   u8 lsb = memory_read(memory, cpu->sp); cpu->sp++;
   u8 msb = memory_read(memory, cpu->sp); cpu->sp++;
-  *rr = ((u16)lsb << 8) | msb;
+  *rr = ((u16)msb << 8) | lsb;
 };
 
 void pop_bc(CPU *cpu, Memory *memory){
@@ -56,9 +70,17 @@ void pop_hl(CPU *cpu, Memory *memory){
 }; // 0xE1
 void pop_af(CPU *cpu, Memory *memory){
   pop(&cpu->af, cpu, memory);
+  cpu->f &= 0xF0; // The lower nibble of F is always 0 on hardware
 }; // 0xF1
 
-// Push to the stack memory, data from the 16-bit register rr
+// Push to the stack memory, data from the 16-bit register rr.
+// SP is decremented *before* each write (the stack grows toward lower
+// addresses), high byte first: after both writes, the high byte sits one
+// address above the final SP, and the low byte sits exactly at it. This
+// same "push the return address" pattern - decrement, write high byte,
+// decrement, write low byte - is reused directly by CALL and RST in
+// op_ctrlflow.c and by interrupt dispatch in interrupts.c, so pop above
+// (and RET) can read it back low-byte-first.
 void push(u16 *rr, CPU *cpu, Memory *memory){
   cpu->sp--;
   memory_write(memory,cpu->sp,(*rr >> 8) & 0xFF); cpu->sp--;
@@ -79,12 +101,15 @@ void push_af(CPU *cpu, Memory *memory){
 }; // 0xF5
 
 
-// Load to the HL register, 16-bit data calculated by adding the signed 8-bit operand e to the 16-bit value of the SP register
+// Load to the HL register, 16-bit data calculated by adding the signed
+// 8-bit operand e to the 16-bit value of the SP register. Flag behavior
+// mirrors add_sp_e in op_arith.c (H/C computed as if e were unsigned) -
+// see the comment there for why.
 void ld_hl_sp(CPU *cpu, Memory *memory){
   int8_t e = (int8_t)memory_read(memory, cpu->pc); cpu->pc++;
-  u8 result = cpu->sp + e;
-  u8 h = ((cpu->sp & 0xF) + (e & 0xF)) > 0xF;  
-  u8 c = ((cpu->sp & 0xFF) + (e & 0xFF)) > 0xFF;    
+  u16 result = (u16)(cpu->sp + e);
+  u8 h = ((cpu->sp & 0xF) + (e & 0xF)) > 0xF;
+  u8 c = ((cpu->sp & 0xFF) + (e & 0xFF)) > 0xFF;
   
   cpu->hl = result;
 
@@ -154,7 +179,7 @@ void ld_a_h(CPU *cpu, Memory *memory) { cpu->a = cpu->h; } // 0x7C
 void ld_a_l(CPU *cpu, Memory *memory) { cpu->a = cpu->l; } // 0x7D
 
 void ld_b_a(CPU *cpu, Memory *memory) { cpu->b = cpu->a; } // 0x47
-void ld_b_b(CPU *cpu, Memory *memory) { cpu->b = cpu->b; } // 0x40 (inutile)
+void ld_b_b(CPU *cpu, Memory *memory) { cpu->b = cpu->b; } // 0x40 no-op, but a real opcode
 void ld_b_c(CPU *cpu, Memory *memory) { cpu->b = cpu->c; } // 0x41
 void ld_b_d(CPU *cpu, Memory *memory) { cpu->b = cpu->d; } // 0x42
 void ld_b_e(CPU *cpu, Memory *memory) { cpu->b = cpu->e; } // 0x43
@@ -163,7 +188,7 @@ void ld_b_l(CPU *cpu, Memory *memory) { cpu->b = cpu->l; } // 0x45
 
 void ld_c_a(CPU *cpu, Memory *memory) { cpu->c = cpu->a; } // 0x4F
 void ld_c_b(CPU *cpu, Memory *memory) { cpu->c = cpu->b; } // 0x48
-void ld_c_c(CPU *cpu, Memory *memory) { cpu->c = cpu->c; } // 0x49 (inutile)
+void ld_c_c(CPU *cpu, Memory *memory) { cpu->c = cpu->c; } // 0x49 no-op, but a real opcode
 void ld_c_d(CPU *cpu, Memory *memory) { cpu->c = cpu->d; } // 0x4A
 void ld_c_e(CPU *cpu, Memory *memory) { cpu->c = cpu->e; } // 0x4B
 void ld_c_h(CPU *cpu, Memory *memory) { cpu->c = cpu->h; } // 0x4C
@@ -172,7 +197,7 @@ void ld_c_l(CPU *cpu, Memory *memory) { cpu->c = cpu->l; } // 0x4D
 void ld_d_a(CPU *cpu, Memory *memory) { cpu->d = cpu->a; } // 0x57
 void ld_d_b(CPU *cpu, Memory *memory) { cpu->d = cpu->b; } // 0x50
 void ld_d_c(CPU *cpu, Memory *memory) { cpu->d = cpu->c; } // 0x51
-void ld_d_d(CPU *cpu, Memory *memory) { cpu->d = cpu->d; } // 0x52 (inutile)
+void ld_d_d(CPU *cpu, Memory *memory) { cpu->d = cpu->d; } // 0x52 no-op, but a real opcode
 void ld_d_e(CPU *cpu, Memory *memory) { cpu->d = cpu->e; } // 0x53
 void ld_d_h(CPU *cpu, Memory *memory) { cpu->d = cpu->h; } // 0x54
 void ld_d_l(CPU *cpu, Memory *memory) { cpu->d = cpu->l; } // 0x55
@@ -181,7 +206,7 @@ void ld_e_a(CPU *cpu, Memory *memory) { cpu->e = cpu->a; } // 0x5F
 void ld_e_b(CPU *cpu, Memory *memory) { cpu->e = cpu->b; } // 0x58
 void ld_e_c(CPU *cpu, Memory *memory) { cpu->e = cpu->c; } // 0x59
 void ld_e_d(CPU *cpu, Memory *memory) { cpu->e = cpu->d; } // 0x5A
-void ld_e_e(CPU *cpu, Memory *memory) { cpu->e = cpu->e; } // 0x5B (inutile)
+void ld_e_e(CPU *cpu, Memory *memory) { cpu->e = cpu->e; } // 0x5B no-op, but a real opcode
 void ld_e_h(CPU *cpu, Memory *memory) { cpu->e = cpu->h; } // 0x5C
 void ld_e_l(CPU *cpu, Memory *memory) { cpu->e = cpu->l; } // 0x5D
 
@@ -190,7 +215,7 @@ void ld_h_b(CPU *cpu, Memory *memory) { cpu->h = cpu->b; } // 0x60
 void ld_h_c(CPU *cpu, Memory *memory) { cpu->h = cpu->c; } // 0x61
 void ld_h_d(CPU *cpu, Memory *memory) { cpu->h = cpu->d; } // 0x62
 void ld_h_e(CPU *cpu, Memory *memory) { cpu->h = cpu->e; } // 0x63
-void ld_h_h(CPU *cpu, Memory *memory) { cpu->h = cpu->h; } // 0x64 (inutile)
+void ld_h_h(CPU *cpu, Memory *memory) { cpu->h = cpu->h; } // 0x64 no-op, but a real opcode
 void ld_h_l(CPU *cpu, Memory *memory) { cpu->h = cpu->l; } // 0x65
 
 void ld_l_a(CPU *cpu, Memory *memory) { cpu->l = cpu->a; } // 0x6F
@@ -199,7 +224,7 @@ void ld_l_c(CPU *cpu, Memory *memory) { cpu->l = cpu->c; } // 0x69
 void ld_l_d(CPU *cpu, Memory *memory) { cpu->l = cpu->d; } // 0x6A
 void ld_l_e(CPU *cpu, Memory *memory) { cpu->l = cpu->e; } // 0x6B
 void ld_l_h(CPU *cpu, Memory *memory) { cpu->l = cpu->h; } // 0x6C
-void ld_l_l(CPU *cpu, Memory *memory) { cpu->l = cpu->l; } // 0x6D (inutile)
+void ld_l_l(CPU *cpu, Memory *memory) { cpu->l = cpu->l; } // 0x6D no-op, but a real opcode
 
 
 
@@ -234,38 +259,45 @@ void ld_a_de(CPU *cpu, Memory *memory) { cpu->a = memory_read(memory, cpu->de); 
 // Load an 8-bit value from register A into memory at address (DE)
 void ld_de_a(CPU *cpu, Memory *memory) { memory_write(memory, cpu->de, cpu->a); }; // 0x12
 
-// Load an 8-bit value from memory at address (nn) into register A
+// Load an 8-bit value from memory at address (nn) into register A.
+// nn reassembled little-endian, same as ld_rr_n16.
 void ld_a_nn(CPU *cpu, Memory *memory) {
   u8 nn_lsb = memory_read(memory, cpu->pc); cpu->pc++;
   u8 nn_msb = memory_read(memory, cpu->pc); cpu->pc++;
-  u16 nn = ((u16)nn_lsb << 8) | nn_msb;
-  cpu->a = memory_read(memory, nn); 
+  u16 nn = ((u16)nn_msb << 8) | nn_lsb;
+  cpu->a = memory_read(memory, nn);
 }; // 0xFA
 
 // Load an 8-bit value from register A into memory at address (nn)
 void ld_nn_a(CPU *cpu, Memory *memory) {
   u8 nn_lsb = memory_read(memory, cpu->pc); cpu->pc++;
   u8 nn_msb = memory_read(memory, cpu->pc); cpu->pc++;
-  u16 nn = ((u16)nn_lsb << 8) | nn_msb;
-  memory_write(memory, nn, cpu->a); 
+  u16 nn = ((u16)nn_msb << 8) | nn_lsb;
+  memory_write(memory, nn, cpu->a);
 }; // 0xEA
 
+// The next four "LDH"-style instructions all target the I/O register page
+// (0xFF00-0xFFFF): with C or n limited to a single byte (0x00-0xFF), OR-ing
+// it with 0xFF00 both computes the right address and is cheaper hardware
+// than a full 16-bit add - this is the same trick real LDH instructions
+// use to reach that page with only an 8-bit operand.
+
 // Load an 8-bit value from memory at address (0xFF00 + C) into register A
-void ld_a_ff00_c(CPU *cpu, Memory *memory) { cpu->a = memory_read(memory, ((u16)cpu->c << 8) | 0xFF ); }; // 0xF2
+void ld_a_ff00_c(CPU *cpu, Memory *memory) { cpu->a = memory_read(memory, 0xFF00 | cpu->c); }; // 0xF2
 
 // Load an 8-bit value from register A into memory at address (0xFF00 + C)
-void ld_ff00_c_a(CPU *cpu, Memory *memory) { memory_write(memory, ((u16)cpu->c << 8) | 0xFF, cpu->a); }; // 0xE2
+void ld_ff00_c_a(CPU *cpu, Memory *memory) { memory_write(memory, 0xFF00 | cpu->c, cpu->a); }; // 0xE2
 
 // Load an 8-bit value from memory at address (0xFF00 + n) into register A
-void ld_a_ff00_n(CPU *cpu, Memory *memory) { 
+void ld_a_ff00_n(CPU *cpu, Memory *memory) {
   u8 n = memory_read(memory, cpu->pc); cpu->pc++;
-  cpu->a = memory_read(memory,  ((u16)n << 8) | 0xFF);
+  cpu->a = memory_read(memory, 0xFF00 | n);
 }; // 0xF0
 
 // Load an 8-bit value from register A into memory at address (0xFF00 + n)
 void ld_ff00_n_a(CPU *cpu, Memory *memory){
   u8 n = memory_read(memory, cpu->pc); cpu->pc++;
-  memory_write(memory, ((u16)n << 8) | 0xFF, cpu->a);
+  memory_write(memory, 0xFF00 | n, cpu->a);
 }; // 0xE0
 
 // Load from memory at address HL into A, then decrement HL
